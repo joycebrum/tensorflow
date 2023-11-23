@@ -3,24 +3,28 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: daily
+      interval: monthly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /ci/devinfra/docker_windows
     schedule:
-      interval: daily
+      interval: monthly
 
   - package-ecosystem: docker
     directory: /ci/official/containers/linux_arm64
     schedule:
-      interval: daily
+      interval: monthly
 
   - package-ecosystem: docker
     directory: /tensorflow/tools/gcs_test
     schedule:
-      interval: daily
+      interval: monthly
 
   - package-ecosystem: docker
     directory: /tensorflow/tools/tf_sig_build_dockerfiles
     schedule:
-      interval: daily
+      interval: monthly
