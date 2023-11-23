@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2019
+FROM mcr.microsoft.com/dotnet/framework/sdk:4.8-windowsservercore-ltsc2019@sha256:3ff7fe9ba749cc5a60297511a40b428bb0694561f9de53cfeb06add0951e2766
 
 # Set default powershell policy for this script (ProgressPreference='SilentlyContinue' makes
 # downloads with Invoke-WebRequest not show the progress bar and is MUCH faster).

@@ -1,0 +1,26 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /ci/devinfra/docker_windows
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /ci/official/containers/linux_arm64
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /tensorflow/tools/gcs_test
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /tensorflow/tools/tf_sig_build_dockerfiles
+    schedule:
+      interval: daily
