@@ -532,8 +532,12 @@ class Delegate {
   }
 
   bool enable_latest_operators() const {
+#ifdef XNNPACK_DELEGATE_USE_LATEST_OPS
+    return true;
+#else
     return (options_.flags &
             TFLITE_XNNPACK_DELEGATE_FLAG_ENABLE_LATEST_OPERATORS) != 0;
+#endif
   }
 
   bool support_variable_ops() const {
@@ -3041,7 +3045,7 @@ class Subgraph {
       const TfLiteConcatenationParams* concat_params,
       const std::unordered_map<int, uint32_t>& input_output_tensors) {
     TF_LITE_ENSURE_STATUS(
-        CheckNumInputsAndOutputs(logging_context, node, 2, 4, 1,
+        CheckNumInputsAndOutputs(logging_context, node, 2, 5, 1,
                                  BuiltinOperator_CONCATENATION, node_index));
     const int num_inputs = NumInputs(node);
 
@@ -3141,6 +3145,16 @@ class Subgraph {
             /*input2_id=*/input_output_tensors.at(node->inputs->data[1]),
             /*input3_id=*/input_output_tensors.at(node->inputs->data[2]),
             /*input4_id=*/input_output_tensors.at(node->inputs->data[3]),
+            /*output_id=*/input_output_tensors.at(node->outputs->data[0]),
+            /*flags=*/0);
+      } else if (num_inputs == 5) {
+        status = xnn_define_concatenate5(
+            subgraph, axis,
+            /*input1_id=*/input_output_tensors.at(node->inputs->data[0]),
+            /*input2_id=*/input_output_tensors.at(node->inputs->data[1]),
+            /*input3_id=*/input_output_tensors.at(node->inputs->data[2]),
+            /*input4_id=*/input_output_tensors.at(node->inputs->data[3]),
+            /*input5_id=*/input_output_tensors.at(node->inputs->data[4]),
             /*output_id=*/input_output_tensors.at(node->outputs->data[0]),
             /*flags=*/0);
       }
@@ -3688,8 +3702,9 @@ class Subgraph {
       TF_LITE_ENSURE_STATUS(CheckTensorNonDynamicAllocation(
           logging_context, filter_tensor, node->inputs->data[1], node_index));
     } else {
-      TF_LITE_ENSURE_STATUS(CheckTensorFloat32OrQUInt8Type(
-          delegate, logging_context, filter_tensor, node->inputs->data[1],
+      TF_LITE_ENSURE_STATUS(CheckTensorFloat32OrQCInt8Type(
+          delegate, logging_context, filter_tensor,
+          /*expected_quantized_dimension=*/0, node->inputs->data[1],
           node_index));
       if (quasi_static_tensors.count(node->inputs->data[1]) == 0) {
         TF_LITE_ENSURE_STATUS(CheckTensorStaticAllocation(

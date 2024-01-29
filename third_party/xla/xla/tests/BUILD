@@ -58,6 +58,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//xla:debug_options_flags",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
         "@local_tsl//tsl/platform:logging",
         "@local_tsl//tsl/platform:test",
@@ -193,6 +194,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":pjrt_client_registry",
+        "//xla/pjrt/gpu:gpu_helpers",
         "//xla/pjrt/gpu:se_gpu_pjrt_client",
     ],
 )
@@ -230,6 +232,7 @@ cc_library(
         "//xla/service:platform_util",
         "//xla/stream_executor",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/lib/core:status_test_util",
         "@local_tsl//tsl/platform:logging",
@@ -296,8 +299,8 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/lib/core:bitmap",
-        "@local_tsl//tsl/platform:float8",
         "@local_tsl//tsl/platform:logging",
+        "@local_tsl//tsl/platform:ml_dtypes",
         "@local_tsl//tsl/platform:test",
     ],
 )
@@ -350,6 +353,7 @@ cc_library(
         "@local_tsl//tsl/platform:path",
         "@local_tsl//tsl/platform:resource_loader",
         "@local_tsl//tsl/platform:subprocess",
+        "@local_tsl//tsl/platform:test",
     ],
 )
 
@@ -777,6 +781,9 @@ xla_test(
 xla_test(
     name = "array_elementwise_ops_test",
     srcs = ["array_elementwise_ops_test.cc"],
+    local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
+        "TENSORFLOW_USE_ROCM=1",
+    ]),
     shard_count = 25,
     deps = [
         ":client_library_test_base",
@@ -1083,7 +1090,7 @@ xla_test(
         "//xla/client:xla_builder",
         "//xla/client/lib:constants",
         "@local_tsl//tsl/lib/core:status_test_util",
-        "@local_tsl//tsl/platform:float8",
+        "@local_tsl//tsl/platform:ml_dtypes",
         "@local_tsl//tsl/platform:test",
     ],
 )
@@ -1306,6 +1313,7 @@ xla_test(
         "requires-gpu-sm80",
     ]},
     backends = ["gpu"],
+    tags = ["no_rocm"],  # No int8
     deps = [
         ":hlo_test_base",
         ":xla_internal_test_main",
@@ -1887,6 +1895,7 @@ xla_test(
         "//xla/client:local_client",
         "//xla/client:xla_builder",
         "@com_google_absl//absl/types:span",
+        "@eigen_archive//:eigen3",
         "@local_tsl//tsl/platform:protobuf",
         "@local_tsl//tsl/platform:test",
     ],
@@ -2002,7 +2011,7 @@ xla_test(
         "//xla/stream_executor",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base",
-        "@local_tsl//tsl/platform:float8",
+        "@local_tsl//tsl/platform:ml_dtypes",
         "@local_tsl//tsl/platform:test",
     ],
 )
@@ -2040,7 +2049,6 @@ xla_test(
             "multi_gpu",
             "no_oss",
             "notap",
-            "jitrt_executable",
         ],
         "cpu": [
             "notsan",
@@ -2079,7 +2087,6 @@ xla_test(
             "multi_gpu",
             "no_oss",
             "notap",
-            "jitrt_executable",
         ],
     },
     backends = [
@@ -2160,7 +2167,7 @@ xla_test(
         "//xla/client:local_client",
         "//xla/client:xla_builder",
         "//xla/stream_executor",
-        "@local_tsl//tsl/platform:float8",
+        "@local_tsl//tsl/platform:ml_dtypes",
         "@local_tsl//tsl/platform:test",
     ],
 )
@@ -2362,7 +2369,7 @@ xla_test(
 
 xla_cc_test(
     name = "llvm_compiler_test",
-    srcs = if_gpu_is_configured(["llvm_compiler_test.cc"]),
+    srcs = ["llvm_compiler_test.cc"],
     local_defines = if_cuda_is_configured(["GOOGLE_CUDA=1"]) + if_rocm_is_configured([
         "TENSORFLOW_USE_ROCM",
     ]),
@@ -2807,7 +2814,7 @@ xla_test(
 xla_test(
     name = "cholesky_test",
     srcs = ["cholesky_test.cc"],
-    real_hardware_only = True,
+    shard_count = 10,
     tags = [
         "optonly",
     ],
@@ -2860,6 +2867,7 @@ xla_test(
         "cpu",
     ],
     copts = tsl_copts(),
+    tags = ["no_oss"],
     deps = [
         ":hlo_test_base",
         ":test_macros_header",
@@ -2869,5 +2877,57 @@ xla_test(
         "//xla:test",
         "//xla:test_helpers",
         "@local_tsl//tsl/platform:platform_port",
+    ],
+)
+
+xla_test(
+    name = "onednn_layer_norm_test",
+    srcs = ["onednn_layer_norm_test.cc"],
+    backends = [
+        "cpu",
+    ],
+    copts = tsl_copts(),
+    deps = [
+        ":hlo_test_base",
+        ":test_macros_header",
+        ":xla_internal_test_main",
+        "//xla:literal",
+        "//xla:shape_util",
+        "//xla:test",
+        "//xla:test_helpers",
+    ],
+)
+
+xla_test(
+    name = "onednn_softmax_test",
+    srcs = ["onednn_softmax_test.cc"],
+    backends = [
+        "cpu",
+    ],
+    copts = tsl_copts(),
+    deps = [
+        ":hlo_test_base",
+        ":test_macros_header",
+        ":xla_internal_test_main",
+        "//xla:literal",
+        "//xla:shape_util",
+        "//xla:test",
+        "//xla:test_helpers",
+    ],
+)
+
+xla_test(
+    name = "numerics_test",
+    srcs = ["numerics_test.cc"],
+    deps = [
+        ":hlo_test_base",
+        ":test_macros_header",
+        ":xla_internal_test_main",
+        "//xla:literal_util",
+        "//xla:statusor",
+        "//xla:test",
+        "//xla:types",
+        "//xla/hlo/ir:hlo",
+        "@local_tsl//tsl/platform:test",
     ],
 )

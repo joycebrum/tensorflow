@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2021 The OpenXLA Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -85,6 +85,7 @@ def make_cpu_client(
     distributed_client: Optional[DistributedRuntimeClient] = ...,
     node_id: int = ...,
     num_nodes: int = ...,
+    collectives: Optional[_xla.CpuCollectives] = ...,
 ) -> Client:
   ...
 

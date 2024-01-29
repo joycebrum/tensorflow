@@ -1,4 +1,4 @@
-/* Copyright 2022 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -113,8 +113,8 @@ absl::Status DoMatmul(
     return absl::InternalError(
         absl::StrFormat("The requested gpublas-lt matmul "
                         "algorithm is not found. Total algorithms available: "
-                        "%zu; requested: %zu",
-                        algos.size(), static_cast<size_t>(algorithm)));
+                        "%zu; requested: %ld",
+                        algos.size(), algorithm));
   }
 
   se::DeviceMemoryBase a_data = GetDeviceAddress(a);

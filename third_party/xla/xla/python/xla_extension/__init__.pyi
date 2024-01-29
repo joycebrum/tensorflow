@@ -1,4 +1,4 @@
-# Copyright 2021 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2021 The OpenXLA Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -59,10 +59,12 @@ class XlaRuntimeError(RuntimeError):
 class PrimitiveType(enum.IntEnum):
   PRIMITIVE_TYPE_INVALID: PrimitiveType
   PRED: PrimitiveType
+  S4: PrimitiveType
   S8: PrimitiveType
   S16: PrimitiveType
   S32: PrimitiveType
   S64: PrimitiveType
+  U4: PrimitiveType
   U8: PrimitiveType
   U16: PrimitiveType
   U32: PrimitiveType
@@ -303,6 +305,7 @@ class DebugOptions:
   xla_gpu_enable_async_collective_permute: bool
   xla_gpu_enable_async_all_to_all: bool
   xla_gpu_enable_async_reduce_scatter: bool
+  xla_gpu_cuda_data_dir: str
   xla_detailed_logging: bool
   xla_enable_dumping: bool
 
@@ -451,6 +454,7 @@ class GpuAllocatorConfig:
       kind: Kind = ...,
       memory_fraction: float = ...,
       preallocate: bool = ...,
+      collective_memory_size: int = ...,
   ) -> None: ...
 
 class HostBufferSemantics(enum.IntEnum):
@@ -514,11 +518,20 @@ class Client:
   ) -> Any: ...
   def __getattr__(self, name: str) -> Any: ...
 
+class CpuCollectives: ...
+
+def make_gloo_tcp_collectives(
+    distributed_client: Optional[DistributedRuntimeClient] = ...,
+    hostname: Optional[str] = ...,
+    interface: Optional[str] = ...,
+) -> CpuCollectives: ...
+
 def get_tfrt_cpu_client(
     asynchronous: bool = ...,
     distributed_client: Optional[DistributedRuntimeClient] = ...,
     node_id: int = ...,
     num_nodes: int = ...,
+    collectives: Optional[CpuCollectives] = ...,
 ) -> Client: ...
 def get_gpu_client(
     asynchronous: bool = ...,
@@ -594,12 +607,10 @@ def batched_device_put(
     shards: Sequence[Any],
     devices: List[Device],
     committed: bool = True,
-) -> ArrayImpl:
-  ...
-
+) -> ArrayImpl: ...
 def check_and_canonicalize_memory_kind(
-    memory_kind: Optional[str], device_list: DeviceList) -> Optional[str]: ...
-
+    memory_kind: Optional[str], device_list: DeviceList
+) -> Optional[str]: ...
 def array_result_handler(
     aval: Any, sharding: Any, committed: bool, _skip_checks: bool = ...
 ) -> Callable: ...
@@ -662,6 +673,7 @@ class Executable:
   def get_compiled_memory_stats(self) -> CompiledMemoryStats: ...
   def serialize(self) -> str: ...
   def compile_options(self) -> CompileOptions: ...
+  def cost_analysis(self) -> Dict[str, Any]: ...
 
 class DeviceTopology:
   platform: str
@@ -734,7 +746,8 @@ def get_distributed_runtime_service(
     heartbeat_interval: Optional[int] = ...,
     max_missing_heartbeats: Optional[int] = ...,
     cluster_register_timeout: Optional[int] = ...,
-    shutdown_timeout: Optional[int] = ...) -> DistributedRuntimeService: ...
+    shutdown_timeout: Optional[int] = ...,
+) -> DistributedRuntimeService: ...
 def get_distributed_runtime_client(
     address: str,
     node_id: int,
@@ -780,6 +793,7 @@ class DeviceList:
   def __getitem__(self, index: Any) -> Any: ...
   def __iter__(self) -> Iterator[Device]: ...
   def __str__(self) -> str: ...
+  def __repr__(self) -> str: ...
   def __getstate__(self) -> Any: ...
   def __setstate__(self, state: Any): ...
   @property
@@ -832,6 +846,7 @@ class GSPMDSharding(XLACompatibleSharding):
       op_sharding: Union[OpSharding, HloSharding],
       *,
       memory_kind: Optional[str] = None,
+      _device_list: Optional[DeviceList] = None,
   ): ...
   _devices: Tuple[Device, ...]
   _hlo_sharding: HloSharding
@@ -859,6 +874,7 @@ def pjit(
     static_argnames: Sequence[str],
     donate_argnums: Sequence[int],
     pytree_registry: pytree.PyTreeRegistry,
+    shard_arg_fallback: Callable,
     cache: Optional[PjitFunctionCache] = ...,
 ) -> PjitFunction: ...
 

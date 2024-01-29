@@ -27,6 +27,12 @@ config_setting(
     define_values = {"xnnpack_force_float_precision": "fp16"},
 )
 
+# Force XNNPACK to use all operators in the delegate.
+config_setting(
+    name = "xnnpack_use_latest_ops_explicit",
+    define_values = {"xnnpack_use_latest_ops": "true"},
+)
+
 # Enable offloading of quantized 8-bit signed operators to XNNPACK delegate
 config_setting(
     name = "tflite_with_xnnpack_qs8_explicit_true",
@@ -214,6 +220,9 @@ cc_library(
     copts = tflite_copts() + select({
         ":xnnpack_force_float_precision_explicit_fp16": ["-DXNNPACK_DELEGATE_FORCE_PRECISION_FP16=1"],
         "//conditions:default": [],
+    }) + select({
+        ":xnnpack_use_latest_ops_explicit": ["-DXNNPACK_DELEGATE_USE_LATEST_OPS=1"],
+        "//conditions:default": [],
     }),
     linkstatic = True,
     deps = [
@@ -337,7 +346,7 @@ cc_library(
         "//tensorflow/lite/core/kernels:builtin_ops",
         "//tensorflow/lite/schema:schema_conversion_utils",
         "//tensorflow/lite/schema:schema_fbs",
-        "//testing/base/public:gunit_for_library_testonly",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
 )
@@ -453,7 +462,7 @@ cc_library(
         "//tensorflow/lite/core/kernels:builtin_ops",
         "//tensorflow/lite/schema:schema_conversion_utils",
         "//tensorflow/lite/schema:schema_fbs",
-        "//testing/base/public:gunit_for_library_testonly",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
 )
@@ -473,7 +482,7 @@ cc_library(
         "//tensorflow/lite/core/kernels:builtin_ops",
         "//tensorflow/lite/schema:schema_conversion_utils",
         "//tensorflow/lite/schema:schema_fbs",
-        "//testing/base/public:gunit_for_library_testonly",
+        "@com_google_googletest//:gtest",
         "@flatbuffers",
     ],
 )

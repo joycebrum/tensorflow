@@ -1,4 +1,4 @@
-/* Copyright 2020 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2020 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,9 +28,9 @@ limitations under the License.
 #include "xla/backends/profiler/plugin/profiler_c_api.h"
 #include "xla/pjrt/c/pjrt_c_api.h"
 #include "xla/pjrt/c/pjrt_c_api_profiler_extension.h"
-#include "xla/python/exceptions.h"
+#include "xla/pjrt/exceptions.h"
+#include "xla/pjrt/status_casters.h"
 #include "xla/python/profiler/internal/traceme_wrapper.h"
-#include "xla/python/status_casters.h"
 #include "xla/python/types.h"
 #include "xla/python/xplane_to_profile_instructions.h"
 #include "xla/status.h"

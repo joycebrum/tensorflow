@@ -3,59 +3,59 @@
 # Import third party config rules.
 load("@bazel_skylib//:workspace.bzl", "bazel_skylib_workspace")
 load("@bazel_skylib//lib:versions.bzl", "versions")
-load("//third_party/gpus:cuda_configure.bzl", "cuda_configure")
-load("//third_party/gpus:rocm_configure.bzl", "rocm_configure")
-load("//third_party/tensorrt:tensorrt_configure.bzl", "tensorrt_configure")
-load("//third_party/nccl:nccl_configure.bzl", "nccl_configure")
-load("//third_party/git:git_configure.bzl", "git_configure")
-load("//third_party/py:python_configure.bzl", "python_configure")
-load("//third_party/systemlibs:syslibs_configure.bzl", "syslibs_configure")
-load("//tensorflow/tools/toolchains:cpus/aarch64/aarch64_compiler_configure.bzl", "aarch64_compiler_configure")
-load("//tensorflow/tools/toolchains:cpus/arm/arm_compiler_configure.bzl", "arm_compiler_configure")
-load("//tensorflow/tools/toolchains/embedded/arm-linux:arm_linux_toolchain_configure.bzl", "arm_linux_toolchain_configure")
-load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
-load("//third_party/clang_toolchain:cc_configure_clang.bzl", "cc_download_clang_toolchain")
-load("//tensorflow/tools/def_file_filter:def_file_filter_configure.bzl", "def_file_filter_configure")
-load("//third_party/llvm:setup.bzl", "llvm_setup")
 
-# Import third party repository rules. See go/tfbr-thirdparty.
-load("//third_party/FP16:workspace.bzl", FP16 = "repo")
+# Import external repository rules.
+load("@bazel_tools//tools/build_defs/repo:java.bzl", "java_import_external")
+load("@rules_jvm_external//:defs.bzl", "maven_install")
+load("@tf_runtime//:dependencies.bzl", "tfrt_dependencies")
+load("//third_party:repo.bzl", "tf_http_archive", "tf_mirror_urls")
 load("//third_party/absl:workspace.bzl", absl = "repo")
 load("//third_party/benchmark:workspace.bzl", benchmark = "repo")
+load("//third_party/clang_toolchain:cc_configure_clang.bzl", "cc_download_clang_toolchain")
 load("//third_party/dlpack:workspace.bzl", dlpack = "repo")
 load("//third_party/ducc:workspace.bzl", ducc = "repo")
 load("//third_party/eigen3:workspace.bzl", eigen3 = "repo")
 load("//third_party/farmhash:workspace.bzl", farmhash = "repo")
 load("//third_party/flatbuffers:workspace.bzl", flatbuffers = "repo")
+
+# Import third party repository rules. See go/tfbr-thirdparty.
+load("//third_party/FP16:workspace.bzl", FP16 = "repo")
 load("//third_party/gemmlowp:workspace.bzl", gemmlowp = "repo")
+load("//third_party/git:git_configure.bzl", "git_configure")
+load("//third_party/gpus:cuda_configure.bzl", "cuda_configure")
+load("//third_party/gpus:rocm_configure.bzl", "rocm_configure")
 load("//third_party/hexagon:workspace.bzl", hexagon_nn = "repo")
 load("//third_party/highwayhash:workspace.bzl", highwayhash = "repo")
 load("//third_party/hwloc:workspace.bzl", hwloc = "repo")
-load("//third_party/implib_so:workspace.bzl", implib_so = "repo")
 load("//third_party/icu:workspace.bzl", icu = "repo")
+load("//third_party/implib_so:workspace.bzl", implib_so = "repo")
 load("//third_party/jpeg:workspace.bzl", jpeg = "repo")
+load("//third_party/kissfft:workspace.bzl", kissfft = "repo")
 load("//third_party/libprotobuf_mutator:workspace.bzl", libprotobuf_mutator = "repo")
+load("//third_party/llvm:setup.bzl", "llvm_setup")
 load("//third_party/nasm:workspace.bzl", nasm = "repo")
+load("//third_party/nccl:nccl_configure.bzl", "nccl_configure")
+load("//third_party/opencl_headers:workspace.bzl", opencl_headers = "repo")
+load("//third_party/pasta:workspace.bzl", pasta = "repo")
+load("//third_party/py:python_configure.bzl", "python_configure")
 load("//third_party/py/ml_dtypes:workspace.bzl", ml_dtypes = "repo")
 load("//third_party/pybind11_abseil:workspace.bzl", pybind11_abseil = "repo")
 load("//third_party/pybind11_bazel:workspace.bzl", pybind11_bazel = "repo")
-load("//third_party/opencl_headers:workspace.bzl", opencl_headers = "repo")
-load("//third_party/kissfft:workspace.bzl", kissfft = "repo")
-load("//third_party/pasta:workspace.bzl", pasta = "repo")
 load("//third_party/ruy:workspace.bzl", ruy = "repo")
 load("//third_party/sobol_data:workspace.bzl", sobol_data = "repo")
 load("//third_party/stablehlo:workspace.bzl", stablehlo = "repo")
-load("//third_party/vulkan_headers:workspace.bzl", vulkan_headers = "repo")
+load("//third_party/systemlibs:syslibs_configure.bzl", "syslibs_configure")
+load("//tensorflow/tools/def_file_filter:def_file_filter_configure.bzl", "def_file_filter_configure")
+load("//tensorflow/tools/toolchains:cpus/aarch64/aarch64_compiler_configure.bzl", "aarch64_compiler_configure")
+load("//tensorflow/tools/toolchains:cpus/arm/arm_compiler_configure.bzl", "arm_compiler_configure")
+load("//tensorflow/tools/toolchains/clang6:repo.bzl", "clang6_configure")
+load("//tensorflow/tools/toolchains/embedded/arm-linux:arm_linux_toolchain_configure.bzl", "arm_linux_toolchain_configure")
+load("//tensorflow/tools/toolchains/remote:configure.bzl", "remote_execution_configure")
+load("//tensorflow/tools/toolchains/remote_config:configs.bzl", "initialize_rbe_configs")
+load("//third_party/tensorrt:tensorrt_configure.bzl", "tensorrt_configure")
 load("//third_party/tensorrt:workspace.bzl", tensorrt = "repo")
 load("//third_party/triton:workspace.bzl", triton = "repo")
-
-# Import external repository rules.
-load("@bazel_tools//tools/build_defs/repo:java.bzl", "java_import_external")
-load("@tf_runtime//:dependencies.bzl", "tfrt_dependencies")
-load("//tensorflow/tools/toolchains/remote_config:configs.bzl", "initialize_rbe_configs")
-load("//tensorflow/tools/toolchains/remote:configure.bzl", "remote_execution_configure")
-load("//tensorflow/tools/toolchains/clang6:repo.bzl", "clang6_configure")
-load("@rules_jvm_external//:defs.bzl", "maven_install")
+load("//third_party/vulkan_headers:workspace.bzl", vulkan_headers = "repo")
 
 def _initialize_third_party():
     """ Load third party repositories.  See above load() statements. """
@@ -150,9 +150,9 @@ def _tf_repositories():
     # LINT.IfChange
     tf_http_archive(
         name = "XNNPACK",
-        sha256 = "88e0158aff1e1498e34dfcaf08d948a73a3246a04fe96e548da71f6b9245a009",
-        strip_prefix = "XNNPACK-c7e7cde37615a81a529c326aa278bfab4cd6fe5a",
-        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/c7e7cde37615a81a529c326aa278bfab4cd6fe5a.zip"),
+        sha256 = "434fe914cb52da3e66ba920082af969f527f23729fff182aecd87ac5324e9f90",
+        strip_prefix = "XNNPACK-dcbfffb80fb4f6fcfcfb5b3723854ec8797fa546",
+        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/dcbfffb80fb4f6fcfcfb5b3723854ec8797fa546.zip"),
     )
     # LINT.ThenChange(//tensorflow/lite/tools/cmake/modules/xnnpack.cmake)
 
@@ -172,18 +172,26 @@ def _tf_repositories():
 
     tf_http_archive(
         name = "cpuinfo",
-        strip_prefix = "cpuinfo-959002f82d7962a473d8bf301845f2af720e0aa4",
-        sha256 = "a0f53ccfb477c57753c595df02bf79ed67bf092fd9a5c61ec5b8992b81bc1e65",
-        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/959002f82d7962a473d8bf301845f2af720e0aa4.zip"),
+        strip_prefix = "cpuinfo-ef634603954d88d2643d5809011288b890ac126e",
+        sha256 = "e07512a11e1c71687359a133f49d60583d7465b737fe5dbe11f461c9aaa72a2b",
+        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/ef634603954d88d2643d5809011288b890ac126e.zip"),
     )
 
     tf_http_archive(
         name = "cudnn_frontend_archive",
         build_file = "//third_party:cudnn_frontend.BUILD",
         patch_file = ["//third_party:cudnn_frontend_header_fix.patch"],
-        sha256 = "d8dba9e2607a0c256aa8eacb45b39986ab6f3f24a4d431d4397047a3cb0cd4fb",
-        strip_prefix = "cudnn-frontend-0.9",
-        urls = tf_mirror_urls("https://github.com/NVIDIA/cudnn-frontend/archive/refs/tags/v0.9.zip"),
+        sha256 = "015ea933139a30e9ccd177b5e0dbfb16f3d08df78334aaacea57880275df734b",
+        strip_prefix = "cudnn-frontend-1.0.0",
+        urls = tf_mirror_urls("https://github.com/NVIDIA/cudnn-frontend/archive/refs/tags/v1.0.0.zip"),
+    )
+
+    tf_http_archive(
+        name = "cutlass_archive",
+        build_file = "//third_party:cutlass.BUILD",
+        sha256 = "84cf3fcc47c440a8dde016eb458f8d6b93b3335d9c3a7a16f388333823f1eae0",
+        strip_prefix = "cutlass-afa7b7241aabe598b725c65480bd9fa71121732c",
+        urls = tf_mirror_urls("https://github.com/chsigg/cutlass/archive/afa7b7241aabe598b725c65480bd9fa71121732c.tar.gz"),
     )
 
     tf_http_archive(
@@ -507,9 +515,9 @@ def _tf_repositories():
         name = "nccl_archive",
         build_file = "//third_party:nccl/archive.BUILD",
         patch_file = ["//third_party/nccl:archive.patch"],
-        sha256 = "16ac98f3e926c024ce48e10ab220e19ce734adc48c423cfd55ad6f509bd1179f",
-        strip_prefix = "nccl-2.18.5-1",
-        urls = tf_mirror_urls("https://github.com/nvidia/nccl/archive/v2.18.5-1.tar.gz"),
+        sha256 = "1c5474553afedb88e878c772f13d6f90b9226b3f2971dfa6f873adb9443100c2",
+        strip_prefix = "nccl-2.19.3-1",
+        urls = tf_mirror_urls("https://github.com/nvidia/nccl/archive/v2.19.3-1.tar.gz"),
     )
 
     java_import_external(

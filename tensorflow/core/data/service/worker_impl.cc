@@ -29,6 +29,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 #include "absl/strings/substitute.h"
 #include "absl/time/time.h"
+#include "tensorflow/core/data/service/byte_size.h"
 #include "tensorflow/core/data/service/common.h"
 #include "tensorflow/core/data/service/common.pb.h"
 #include "tensorflow/core/data/service/data_transfer.h"
@@ -47,6 +48,7 @@ limitations under the License.
 #include "tensorflow/core/data/standalone.h"
 #include "tensorflow/core/framework/dataset.pb.h"
 #include "tensorflow/core/framework/metrics.h"
+#include "tensorflow/core/framework/model.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -113,7 +115,8 @@ WorkerConfig ApplyWorkerDefaults(const WorkerConfig& config) {
         absl::ToInt64Milliseconds(kDefaultDispatcherTimeout));
   }
   if (new_config.snapshot_max_chunk_size_bytes() == 0) {
-    new_config.set_snapshot_max_chunk_size_bytes(kDefaultMaxChunkSizeBytes);
+    new_config.set_snapshot_max_chunk_size_bytes(
+        kDefaultMaxChunkSize.ToUnsignedBytes());
   }
   return new_config;
 }
@@ -615,11 +618,14 @@ std::vector<ActiveTask> DataServiceWorkerImpl::GetActiveTasks() const
       mutex_lock task_lock(task->mu);
       task_initialized = task->initialized;
     }
-    if (task_initialized && task->task_runner != nullptr) {
-      std::optional<double> processing_time_nsec =
-          task->task_runner->GetProcessingTimeNsec();
-      active_task.set_processing_time_nsec(
-          processing_time_nsec ? processing_time_nsec.value() : 0.0);
+
+    if (task_initialized && task->task_runner != nullptr &&
+        task->task_runner->model() != nullptr) {
+      std::shared_ptr<model::Model> model = task->task_runner->model();
+      double processing_time_nsec = model->ComputeSnapshotProcessingTimeNsec();
+      if (processing_time_nsec > 0) {
+        active_task.set_processing_time_nsec(processing_time_nsec);
+      }
     }
     active_tasks.push_back(std::move(active_task));
   }
@@ -740,7 +746,7 @@ Status DataServiceWorkerImpl::UpdateSnapshotWriters(
             SnapshotWriterParams{
                 snapshot_task.base_path(), snapshot_task.stream_index(),
                 snapshot_task.metadata().compression(), Env::Default(),
-                config_.snapshot_max_chunk_size_bytes()},
+                ByteSize::Bytes(config_.snapshot_max_chunk_size_bytes())},
             std::move(iterator)));
   }
 

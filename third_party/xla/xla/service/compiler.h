@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2017 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ class AotCompilationResult {
   }
 
   virtual StatusOr<std::unique_ptr<Executable>> LoadExecutable(
-      Compiler* compiler, se::StreamExecutor* executor) {
+      Compiler* compiler, const se::StreamExecutor* executor) const {
     return Unimplemented("LoadExecutable unimplemented.");
   }
 
@@ -169,7 +169,7 @@ class Compiler {
   // The returned 'BufferAssignment' retains a pointer to the 'HloModule', so
   // the module must live at least as long as the buffer assignments.
   virtual StatusOr<std::unique_ptr<BufferAssignment>> AssignBuffers(
-      HloModule* module, se::StreamExecutor* executor) {
+      HloModule* module, const se::StreamExecutor* executor) {
     return Unimplemented("This compiler does not support this method");
   }
 

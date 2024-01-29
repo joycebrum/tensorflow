@@ -91,7 +91,10 @@ cc_library(
         "//xla/stream_executor:device_memory",
         "//xla/stream_executor:device_memory_allocator",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/synchronization",
+        "@local_tsl//tsl/profiler/lib:connected_traceme",
+        "@local_tsl//tsl/profiler/lib:context_types_hdrs",
     ],
 )
 
@@ -118,6 +121,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":event_pool",
+        ":pjrt_common",
         ":semaphore",
         ":worker_thread",
         "//xla:status",
@@ -230,6 +234,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":compile_options_proto_cc",
+        ":executable_metadata_proto_cc",
         ":execute_options_proto_cc",
         ":pjrt_common",
         "//xla:shape_layout",
@@ -253,7 +258,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@local_tsl//tsl/platform:errors",
-        "@local_tsl//tsl/platform:protobuf",
         "@local_tsl//tsl/platform:statusor",
     ],
 )
@@ -292,7 +296,6 @@ cc_library(
         ":pjrt_device_description",
         ":pjrt_executable",
         "//xla/client:xla_computation",
-        "//xla/service:hlo_parser",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",
@@ -327,6 +330,9 @@ cc_library(
     name = "pjrt_common",
     hdrs = ["pjrt_common.h"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@local_tsl//tsl/lib/gtl:int_type",
+    ],
 )
 
 cc_library(
@@ -380,10 +386,7 @@ cc_library(
     hdrs = ["metrics.h"],
     visibility = ["//visibility:public"],
     deps = [
-        "//xla/stream_executor",
-        "//xla/stream_executor/gpu:gpu_init",
         "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/log",
         "@com_google_absl//absl/strings",
         "@local_tsl//tsl/lib/monitoring:counter",
         "@local_tsl//tsl/lib/monitoring:gauge",
@@ -428,14 +431,18 @@ cc_library(
         ":metrics",
         ":mlir_to_hlo",
         ":pjrt_client",
+        ":pjrt_common",
+        ":pjrt_compiler",
         ":pjrt_executable",
         ":pjrt_future",
+        ":semaphore",
         ":tracked_device_buffer",
         ":transpose",
         ":utils",
         "//xla:cpu_function_runtime",
         "//xla:executable_run_options",
         "//xla:literal",
+        "//xla:shape_tree",
         "//xla:shape_util",
         "//xla:status",
         "//xla:statusor",
@@ -446,6 +453,7 @@ cc_library(
         "//xla/client:xla_computation",
         "//xla/hlo/ir:hlo",
         "//xla/pjrt/distributed:protocol_proto_cc",
+        "//xla/service:compiler",
         "//xla/service:computation_layout",
         "//xla/service:computation_placer",
         "//xla/service:executable",
@@ -459,9 +467,11 @@ cc_library(
         "//xla/stream_executor/host:host_platform_id",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
@@ -469,6 +479,7 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
+        "@llvm-project//mlir:IR",
         "@local_tsl//tsl/framework:allocator",
         "@local_tsl//tsl/platform:casts",
         "@local_tsl//tsl/platform:env",
@@ -479,6 +490,7 @@ cc_library(
         "@local_tsl//tsl/platform:status",
         "@local_tsl//tsl/platform:statusor",
         "@local_tsl//tsl/profiler/lib:connected_traceme",
+        "@local_tsl//tsl/profiler/lib:context_types_hdrs",
         "@local_tsl//tsl/profiler/lib:traceme",
     ],
 )
@@ -532,21 +544,35 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//xla:status",
+        "//xla:statusor",
+        "//xla:util",
         "//xla/client:xla_computation",
         "//xla/mlir/utils:error_util",
         "//xla/mlir_hlo",
+        "//xla/mlir_hlo:hlo_dialect_registration",
         "//xla/mlir_hlo:mhlo_passes",
         "//xla/translate/mhlo_to_hlo:mlir_hlo_to_hlo",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:FuncExtensions",
         "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:MLProgramDialect",
         "@llvm-project//mlir:Parser",
         "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:ReconcileUnrealizedCasts",
+        "@llvm-project//mlir:ShapeDialect",
         "@llvm-project//mlir:SparseTensorDialect",
+        "@llvm-project//mlir:Support",
         "@llvm-project//mlir:Transforms",
         "@stablehlo//:chlo_ops",
+        "@stablehlo//:register",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
+        "@stablehlo//:stablehlo_portable_api",
+        "@stablehlo//:stablehlo_serialization",
     ],
 )
 
@@ -601,11 +627,14 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":lru_cache",
+        "//xla:compiler_macros",
+        "//xla:ef57",
         "//xla:permutation_util",
         "//xla:status",
         "//xla:statusor",
         "//xla:util",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -644,6 +673,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":compile_options_proto_cc",
+        ":mlir_to_hlo",
         ":pjrt_api",
         ":pjrt_client",
         ":pjrt_common",
@@ -664,6 +694,7 @@ cc_library(
         "//xla/mlir_hlo:mhlo_passes",
         "//xla/pjrt/c:pjrt_c_api_hdrs",
         "//xla/pjrt/c:pjrt_c_api_helpers",
+        "//xla/pjrt/distributed:key_value_store_interface",
         "//xla/service:computation_placer_hdr",
         "//xla/service:hlo_cost_analysis",
         "//xla/service:hlo_module_config",
@@ -672,6 +703,7 @@ cc_library(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
@@ -802,4 +834,46 @@ tf_proto_library(
     name = "execute_options_proto",
     srcs = ["execute_options.proto"],
     visibility = ["//visibility:public"],
+)
+
+tf_proto_library(
+    name = "executable_metadata_proto",
+    srcs = ["executable_metadata.proto"],
+    protodeps = [
+        "//xla/service:hlo_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "exceptions",
+    hdrs = ["exceptions.h"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
+    features = ["-use_header_modules"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//xla:status",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "status_casters",
+    hdrs = ["status_casters.h"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
+    features = ["-use_header_modules"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":exceptions",
+        "//xla:status",
+        "//xla:statusor",
+        "@local_tsl//tsl/platform:macros",
+    ],
 )

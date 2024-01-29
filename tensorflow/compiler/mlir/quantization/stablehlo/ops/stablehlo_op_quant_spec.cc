@@ -25,7 +25,6 @@ limitations under the License.
 #include "mlir/IR/Value.h"  // from @llvm-project
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "stablehlo/dialect/StablehloOps.h"  // from @stablehlo
-#include "tensorflow/compiler/mlir/lite/quantization/ir/QuantOps.h"
 #include "tensorflow/compiler/mlir/lite/quantization/quantization_utils.h"
 #include "tensorflow/compiler/mlir/quantization/tensorflow/quantization_options.pb.h"
 #include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.h"
@@ -38,7 +37,7 @@ std::unique_ptr<OpQuantSpec> GetStableHloOpQuantSpec(Operation* op) {
     auto entry_function =
         call_op->getAttrOfType<FlatSymbolRefAttr>("_entry_function");
     StringRef function_name = entry_function.getValue();
-    if (!function_name.startswith("composite_")) {
+    if (!function_name.starts_with("composite_")) {
       return spec;
     }
     if (function_name.contains("conv")) {
@@ -69,12 +68,12 @@ std::unique_ptr<OpQuantSpec> GetStableHloOpQuantSpec(Operation* op) {
 
 std::unique_ptr<OpQuantScaleSpec> GetStableHloQuantScaleSpec(Operation* op) {
   auto scale_spec = std::make_unique<OpQuantScaleSpec>();
-  // TODO - b/307619822: Add below ops to the spec with unit tests.
-  // mlir::stablehlo::GatherOp, mlir::stablehlo::SliceOp,
-  // mlir::stablehlo::BroadcastInDimOp
-  if (llvm::isa<mlir::stablehlo::ConcatenateOp, mlir::stablehlo::ConvertOp,
-                mlir::stablehlo::PadOp, mlir::stablehlo::ReshapeOp,
-                mlir::stablehlo::SelectOp, mlir::stablehlo::TransposeOp>(op)) {
+  if (llvm::isa<mlir::stablehlo::BroadcastInDimOp,
+                mlir::stablehlo::ConcatenateOp, mlir::stablehlo::ConvertOp,
+                mlir::stablehlo::GatherOp, mlir::stablehlo::PadOp,
+                mlir::stablehlo::ReduceWindowOp, mlir::stablehlo::ReshapeOp,
+                mlir::stablehlo::SelectOp, mlir::stablehlo::SliceOp,
+                mlir::stablehlo::TransposeOp>(op)) {
     scale_spec->has_same_scale_requirement = true;
   }
   return scale_spec;

@@ -1,4 +1,4 @@
-/* Copyright 2023 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2023 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,7 +25,19 @@ __global__ void SetCondition() {}
 }  // namespace rocm
 
 namespace gpu {
-void* GetSetConditionKernel() {
+void* GetSetIfConditionKernel() {
+  return reinterpret_cast<void*>(&rocm::SetCondition);
+}
+void* GetSetIfElseConditionKernel() {
+  return reinterpret_cast<void*>(&rocm::SetCondition);
+}
+void* GetSetCaseConditionKernel() {
+  return reinterpret_cast<void*>(&rocm::SetCondition);
+}
+void* GetSetForConditionKernel() {
+  return reinterpret_cast<void*>(&rocm::SetCondition);
+}
+void* GetSetWhileConditionKernel() {
   return reinterpret_cast<void*>(&rocm::SetCondition);
 }
 }  // namespace gpu

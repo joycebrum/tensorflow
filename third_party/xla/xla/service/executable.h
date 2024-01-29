@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2017 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -381,7 +381,7 @@ class Executable {
   }
 
   HloProto const* hlo_proto() const {
-    if (!hlo_proto_->has_hlo_module()) {
+    if (hlo_proto_ != nullptr && !hlo_proto_->has_hlo_module()) {
       *hlo_proto_->mutable_hlo_module() = module().ToProto();
     }
     return hlo_proto_.get();

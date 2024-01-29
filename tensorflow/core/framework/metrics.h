@@ -245,7 +245,10 @@ void RecordUnusedOutput(const string& op_name);
 
 // Records the pipeline processing time in microseconds
 void RecordPipelineProcessingTime(const string& id,
-                                  int64_t pipeline_processing_time_usec);
+                                  double pipeline_processing_time_usec);
+
+// Increments the count of binaries loaded from the persistent cache.
+void UpdatePersistentCacheLoadCount();
 
 // Updates the metrics stored about time spent building graphs.
 //

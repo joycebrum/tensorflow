@@ -1,4 +1,4 @@
-/* Copyright 2023 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2023 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "xla/ffi/api/c_api.h"
 #include "xla/ffi/api/c_api_internal.h"  // IWYU pragma: keep
+#include "xla/hlo/ir/hlo_computation.h"
 #include "xla/runtime/memref_view.h"
 #include "xla/service/service_executable_run_options.h"
 #include "xla/status.h"
@@ -38,6 +39,9 @@ limitations under the License.
 #include "xla/xla_data.pb.h"
 
 namespace xla::ffi {
+
+// A tag to declare called computation argument in FFI handler.
+struct CalledComputation {};
 
 //===----------------------------------------------------------------------===//
 // Arguments
@@ -61,7 +65,8 @@ struct Buffer {
 
 template <>
 struct ArgDecoding<Buffer> {
-  static std::optional<Buffer> Decode(XLA_FFI_ArgType type, void* arg) {
+  static std::optional<Buffer> Decode(XLA_FFI_ArgType type, void* arg,
+                                      DiagnosticEngine&) {
     if (type != XLA_FFI_ArgType_BUFFER) return std::nullopt;
     auto* buf = reinterpret_cast<XLA_FFI_Buffer*>(arg);
 
@@ -74,16 +79,56 @@ struct ArgDecoding<Buffer> {
 };
 
 //===----------------------------------------------------------------------===//
+// Attributes decoding
+//===----------------------------------------------------------------------===//
+
+// A type tag to mark i64 attributes as pointers to `T`.
+template <typename T>
+struct Pointer {};
+
+template <typename T>
+struct AttrDecoding<Pointer<T>> {
+  using Type = T*;
+
+  static std::optional<Type> Decode(XLA_FFI_AttrType type, void* attr,
+                                    DiagnosticEngine& diagnostic) {
+    if (type != XLA_FFI_AttrType_I64) {
+      return diagnostic.Emit("Wrong attribute type: ")
+             << "expected i64 for passing user data but got " << type;
+    }
+
+    static_assert(sizeof(uintptr_t) == sizeof(int64_t));
+    uintptr_t ptr = *reinterpret_cast<uintptr_t*>(attr);
+    return reinterpret_cast<Type>(ptr);
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Context decoding
 //===----------------------------------------------------------------------===//
 
+// TODO(ezhulenev): We should remove `ServiceExecutableRunOptions` context and
+// pass only se::Stream to FFI handlers.
 template <>
 struct CtxDecoding<ServiceExecutableRunOptions> {
   using Type = const ServiceExecutableRunOptions*;
 
   static std::optional<Type> Decode(const XLA_FFI_Api* api,
-                                    XLA_FFI_ExecutionContext* ctx) {
+                                    XLA_FFI_ExecutionContext* ctx,
+                                    DiagnosticEngine&) {
     void* ptr = api->internal_api->XLA_FFI_ServiceExecutableRunOptions_Get(ctx);
+    return reinterpret_cast<Type>(ptr);
+  }
+};
+
+template <>
+struct CtxDecoding<CalledComputation> {
+  using Type = const HloComputation*;
+
+  static std::optional<Type> Decode(const XLA_FFI_Api* api,
+                                    XLA_FFI_ExecutionContext* ctx,
+                                    DiagnosticEngine&) {
+    void* ptr = api->internal_api->XLA_FFI_CalledComputation_Get(ctx);
     return reinterpret_cast<Type>(ptr);
   }
 };

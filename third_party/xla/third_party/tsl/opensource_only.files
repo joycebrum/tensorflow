@@ -63,8 +63,11 @@ third_party/nccl/LICENSE:
 third_party/nccl/archive.BUILD:
 third_party/nccl/archive.patch:
 third_party/nccl/build_defs.bzl.tpl:
+third_party/nccl/generated_names.bzl.tpl:
 third_party/nccl/nccl_configure.bzl:
 third_party/nccl/system.BUILD.tpl:
+third_party/nvtx/BUILD:
+third_party/nvtx/LICENSE:
 third_party/png.BUILD:
 third_party/png_fix_rpi.patch:
 third_party/protobuf/BUILD:

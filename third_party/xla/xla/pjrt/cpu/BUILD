@@ -1,4 +1,5 @@
 load("//xla:xla.bzl", "xla_cc_test")
+load("@local_tsl//tsl/platform:build_config.bzl", "tf_proto_library")
 load("@local_tsl//tsl/platform:rules_cc.bzl", "cc_library")
 
 package(
@@ -28,6 +29,7 @@ cc_library(
         "//xla/runtime:cpu_event",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
@@ -93,6 +95,35 @@ cc_library(
     ],
 )
 
+tf_proto_library(
+    name = "cpu_topology_proto",
+    srcs = ["cpu_topology.proto"],
+    cc_api_version = 2,
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "cpu_topology",
+    srcs = ["cpu_topology.cc"],
+    hdrs = ["cpu_topology.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cpu_topology_proto_cc",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+xla_cc_test(
+    name = "cpu_topology_test",
+    srcs = ["cpu_topology_test.cc"],
+    deps = [
+        ":cpu_topology",
+        "@local_tsl//tsl/platform:protobuf",
+        "@local_tsl//tsl/platform:test",
+        "@local_tsl//tsl/platform:test_main",
+    ],
+)
+
 cc_library(
     name = "cpu_client",
     srcs = ["cpu_client.cc"],
@@ -100,6 +131,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":abstract_tfrt_cpu_buffer",
+        ":cpu_topology",
         ":tracked_tfrt_cpu_device_buffer",
         "//xla:array",
         "//xla:debug_options_flags",
@@ -118,11 +150,15 @@ cc_library(
         "//xla/pjrt:compile_options_proto_cc",
         "//xla/pjrt:mlir_to_hlo",
         "//xla/pjrt:pjrt_client",
+        "//xla/pjrt:pjrt_common",
+        "//xla/pjrt:pjrt_compiler",
+        "//xla/pjrt:pjrt_device_description",
         "//xla/pjrt:pjrt_executable",
         "//xla/pjrt:pjrt_future",
         "//xla/pjrt:semaphore",
         "//xla/pjrt:transpose",
         "//xla/pjrt:utils",
+        "//xla/pjrt/distributed:key_value_store_interface",
         "//xla/pjrt/distributed:topology_util",
         "//xla/runtime:cpu_event",
         "//xla/service:buffer_assignment",
@@ -137,8 +173,10 @@ cc_library(
         "//xla/service:hlo_proto_cc",
         "//xla/service:hlo_value",
         "//xla/service/cpu:buffer_desc",
+        "//xla/service/cpu:collectives_interface",
         "//xla/service/cpu:cpu_compiler",
         "//xla/service/cpu:cpu_executable",
+        "//xla/service/cpu:cpu_executable_run_options",
         "//xla/service/cpu:cpu_xfeed",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/base:dynamic_annotations",
@@ -149,6 +187,7 @@ cc_library(
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/synchronization",
@@ -158,6 +197,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@local_tsl//tsl/concurrency:async_value",
         "@local_tsl//tsl/concurrency:ref_count",
+        "@local_tsl//tsl/lib/strings:proto_serialization",
         "@local_tsl//tsl/platform:casts",
         "@local_tsl//tsl/platform:denormal",
         "@local_tsl//tsl/platform:env",
@@ -193,5 +233,55 @@ xla_cc_test(
         "@local_tsl//tsl/platform:status_matchers",
         "@local_tsl//tsl/platform:statusor",
         "@local_tsl//tsl/platform:test",
+    ],
+)
+
+cc_library(
+    name = "gloo_kv_store",
+    srcs = ["gloo_kv_store.cc"],
+    hdrs = ["gloo_kv_store.h"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
+    features = ["-use_header_modules"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/gloo",
+        "//xla/pjrt:status_casters",
+        "//xla/pjrt/distributed:key_value_store_interface",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_library(
+    name = "gloo_collectives",
+    srcs = ["gloo_collectives.cc"],
+    hdrs = ["gloo_collectives.h"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
+    features = ["-use_header_modules"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/gloo",
+        "//xla:shape_util",
+        "//xla:status_macros",
+        "//xla:types",
+        "//xla:xla_data_proto_cc",
+        "//xla/service:collective_ops_utils",
+        "//xla/service:global_device_id",
+        "//xla/service/cpu:collectives_interface",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
+        "@com_google_absl//absl/types:span",
+        "@local_tsl//tsl/platform:errors",
+        "@local_tsl//tsl/platform:logging",
     ],
 )

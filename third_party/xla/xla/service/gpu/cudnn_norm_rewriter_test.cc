@@ -1,4 +1,4 @@
-/* Copyright 2023 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2023 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,16 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "xla/service/gpu/cudnn_norm_rewriter.h"
+#include <string>
+
+#include <gtest/gtest.h>
+#include "xla/stream_executor/device_description.h"
 
 #if GOOGLE_CUDA
 #include "third_party/gpus/cuda/include/cuda.h"
-#include "third_party/gpus/cudnn/cudnn.h"
+#include "third_party/gpus/cudnn/cudnn.h"  // IWYU pragma: keep
 #endif
 
 #include "xla/service/gpu/tests/gpu_codegen_test.h"
-#include "xla/tests/filecheck.h"
-#include "tsl/lib/core/status_test_util.h"
 
 namespace xla {
 namespace gpu {

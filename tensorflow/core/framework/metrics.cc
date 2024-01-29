@@ -31,6 +31,10 @@ namespace tensorflow {
 namespace metrics {
 namespace {
 
+auto* persistent_cache_load_count = tsl::monitoring::Counter<0>::New(
+    "/tensorflow/core/persistent_cache_load_count",
+    "The number of times a binary is loaded from the persistent cache.");
+
 auto* graph_runs = tsl::monitoring::Counter<0>::New(
     "/tensorflow/core/graph_runs",
     "The number of graph executions used to collect "
@@ -266,12 +270,11 @@ auto* tf_data_model_gauge =
     tsl::monitoring::Gauge<std::function<std::string()>, 1>::New(
         "/tensorflow/data/model", "tf.data autotuning model proto.", "id");
 
-auto* tf_data_pipeline_processing_time =
-    tsl::monitoring::Gauge<int64_t, 1>::New(
-        "/tensorflow/data/pipeline_processing_time",
-        "The total processing time of the slowest stage in the input pipeline "
-        "in microseconds",
-        "id");
+auto* tf_data_pipeline_processing_time = tsl::monitoring::Gauge<double, 1>::New(
+    "/tensorflow/data/pipeline_processing_time",
+    "The total processing time of the slowest stage in the input pipeline "
+    "in microseconds",
+    "id");
 
 auto* tf_data_auto_shard = tsl::monitoring::Gauge<int64, 2>::New(
     "/tensorflow/data/autoshard", "tf.data autoshard statistics.", "id",
@@ -474,7 +477,7 @@ tsl::monitoring::GaugeCell<std::function<std::string()>>* GetTFDataModelGauge(
   return tf_data_model_gauge->GetCell(id);
 }
 
-tsl::monitoring::GaugeCell<int64_t>* GetTFDataPipelineProcessingTimeGauge(
+tsl::monitoring::GaugeCell<double>* GetTFDataPipelineProcessingTimeGauge(
     const string& id) {
   return tf_data_pipeline_processing_time->GetCell(id);
 }
@@ -706,6 +709,12 @@ void RecordTPUXlaSpmdCoresPerReplica(int64_t cores_per_replica) {
       ->IncrementBy(1);
 }
 
+void UpdatePersistentCacheLoadCount() {
+  static auto* persistent_cache_load_count_cell =
+      persistent_cache_load_count->GetCell();
+  persistent_cache_load_count_cell->IncrementBy(1);
+}
+
 void UpdateGraphExecTime(const uint64 running_time_usecs) {
   if (running_time_usecs > 0) {
     static auto* graph_runs_cell = graph_runs->GetCell();
@@ -835,7 +844,7 @@ void RecordUnusedOutput(const string& op_name) {
 }
 
 void RecordPipelineProcessingTime(const string& id,
-                                  int64_t pipeline_processing_time_usec) {
+                                  double pipeline_processing_time_usec) {
   GetTFDataPipelineProcessingTimeGauge(id)->Set(pipeline_processing_time_usec);
 }
 

@@ -67,7 +67,7 @@ def ReplaceStablehloOpsInMainFunctionWithXlaCallModuleOpsPass : Pass<"stablehlo-
   }];
 }
 
-def QuantizePass : Pass<"stablehlo-quantize", "mlir::func::FuncOp"> {
+def QuantizePass : Pass<"stablehlo-quantize", "mlir::ModuleOp"> {
   let summary = "Applies static-range quantization on ops.";
   let dependentDialects = [
     "mlir::stablehlo::StablehloDialect",
@@ -107,4 +107,29 @@ def QuantizeCompositeFunctionsPass : Pass<"stablehlo-quantize-composite-function
 def UnwrapXlaCallModuleOpPass : Pass<"stablehlo-unwrap-xla-call-module-op", "ModuleOp"> {
   let summary = "Unwrap XlaCallModuleOps into inline functions if not used for quantizing fused patterns.";
   let dependentDialects = ["TF::TensorFlowDialect"];
+}
+
+def ConvertFuncToBfloat16Pass : Pass<"stablehlo-convert-func-to-bfloat16", "mlir::func::FuncOp"> {
+  let summary = "Convert a StableHLO function to bfloat16";
+  let dependentDialects = ["mlir::stablehlo::StablehloDialect"];
+}
+
+def ConvertXlaCallModuleOpToBfloat16Pass : Pass<"stablehlo-convert-xla-call-module-op-to-bfloat16", "mlir::func::FuncOp"> {
+  let summary = "Convert serialized XlaCallModuleOp to bfloat16";
+  let dependentDialects = [
+    "TF::TensorFlowDialect",
+    "mlir::quant::QuantizationDialect",
+    "mlir::shape::ShapeDialect",
+    "mlir::stablehlo::StablehloDialect",
+  ];
+}
+
+def PopulateShapePass : Pass<"populate-shape", "ModuleOp"> {
+  let summary = "Populate output shape with known information for CustomAggregatorOp and XlaCallModuleOp.";
+  let dependentDialects = ["TF::TensorFlowDialect"];
+}
+
+def OptimizeGraphPass : Pass<"optimize-graph", "ModuleOp"> {
+  let summary = "Optimize the sub-optimal patterns after quantization.";
+  let dependentDialects = ["mlir::stablehlo::StablehloDialect",];
 }

@@ -1,4 +1,4 @@
-/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2019 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,14 +13,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <cstddef>
 #include <cstdint>
+#include <ostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
-#include "absl/strings/str_cat.h"
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+#include "absl/strings/str_format.h"
+#include "xla/shape.h"
+#include "tsl/platform/statusor.h"
 
 #if GOOGLE_CUDA
-#include "third_party/gpus/cuda/include/cuda.h"
+#include "third_party/gpus/cuda/include/cuda.h"  // IWYU pragma: keep
 #include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 #include "third_party/gpus/cuda/include/driver_types.h"
 #define PLATFORM "CUDA"
@@ -30,21 +37,24 @@ limitations under the License.
 #endif
 
 #include "absl/status/status.h"
+#include "absl/strings/str_cat.h"
 #include "xla/client/lib/constants.h"
 #include "xla/client/xla_builder.h"
 #include "xla/ffi/ffi.h"
 #include "xla/ffi/ffi_api.h"
+#include "xla/hlo/ir/hlo_casting_utils.h"
+#include "xla/hlo/ir/hlo_computation.h"
+#include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/runtime/custom_call.h"
 #include "xla/runtime/custom_call_registry.h"
-#include "xla/runtime/executable.h"
+#include "xla/runtime/executable.h"  // IWYU pragma: keep
 #include "xla/runtime/memref_view.h"
-#include "xla/runtime/module.h"
-#include "xla/runtime/module_registry.h"
 #include "xla/service/custom_call_status.h"
 #include "xla/service/custom_call_target_registry.h"
 #include "xla/service/gpu/runtime/custom_call_registry.h"
 #include "xla/service/gpu/runtime/support.h"
 #include "xla/service/service_executable_run_options.h"
+#include "xla/shape_util.h"
 #include "xla/status.h"
 #include "xla/stream_executor/gpu/gpu_types.h"
 #include "xla/test_helpers.h"
@@ -396,12 +406,12 @@ XLA_RUNTIME_DEFINE_CUSTOM_CALL(
 // example, once it's fully supported.
 
 namespace impl {
-static Status AlwaysFail(ffi::Buffer arg, int32_t value) {
+static absl::Status AlwaysFail(ffi::Buffer arg, int32_t value) {
   return AlwaysFailImpl(arg, value);
 }
 
-static Status Memcpy(const ServiceExecutableRunOptions* run_options,
-                     ffi::Buffer src, ffi::Buffer dst) {
+static absl::Status Memcpy(const ServiceExecutableRunOptions* run_options,
+                           ffi::Buffer src, ffi::Buffer dst) {
   return MemcpyImpl(run_options, src, dst);
 }
 }  // namespace impl
@@ -431,9 +441,9 @@ XLA_GPU_REGISTER_RUNTIME_CUSTOM_CALL(RegisterCustomCalls);
 // (5) Register XLA FFI handlers with XLA runtime.
 
 XLA_FFI_REGISTER_HANDLER(ffi::GetXlaFfiApi(), "__gpu$xla.gpu.ext.always_fail",
-                         kAlwaysFail);
+                         PLATFORM, kAlwaysFail);
 XLA_FFI_REGISTER_HANDLER(ffi::GetXlaFfiApi(), "__gpu$xla.gpu.ext.memcpy",
-                         kMemcpy);
+                         PLATFORM, kMemcpy);
 
 TEST_F(CustomCallTest, RuntimeCustomCallAlwaysFail) {
   XlaBuilder b(TestName());
@@ -457,6 +467,92 @@ TEST_F(CustomCallTest, ExportedFfiMemcpy) {
              /*output_operand_aliasing=*/{}, /*literal=*/nullptr,
              /*schedule=*/CustomCallSchedule::SCHEDULE_NONE,
              /*api_version=*/CustomCallApiVersion::API_VERSION_TYPED_FFI);
+  TF_ASSERT_OK_AND_ASSIGN(auto result, ExecuteAndTransfer(&b, {}));
+  EXPECT_THAT(result.data<float>(), ::testing::Each(42));
+}
+
+// Test passing arbitrary pointers as i64 attributes.
+static absl::Status HandleUserPointer(ffi::Buffer, const std::string* str) {
+  return absl::InternalError(*str);
+}
+
+XLA_FFI_DEFINE_HANDLER(kHandleUserPointer, HandleUserPointer,
+                       ffi::Ffi::Bind()
+                           .Arg<ffi::Buffer>()  // buffer for result
+                           .Attr<ffi::Pointer<std::string>>("message"));
+
+XLA_FFI_REGISTER_HANDLER(ffi::GetXlaFfiApi(), "__xla_test$$user_data", PLATFORM,
+                         kHandleUserPointer);
+
+TEST_F(CustomCallTest, PassUserPointerWithAttrs) {
+  std::string message = "User-defined message";
+  auto ptr = reinterpret_cast<uintptr_t>(&message);
+
+  XlaBuilder b(TestName());
+  CustomCall(&b, "__xla_test$$user_data", /*operands=*/{},
+             ShapeUtil::MakeShape(F32, {}),
+             /*opaque=*/absl::StrFormat("{message = %d : i64}", ptr),
+             /*has_side_effect=*/false,
+             /*output_operand_aliasing=*/{}, /*literal=*/nullptr,
+             /*schedule=*/CustomCallSchedule::SCHEDULE_NONE,
+             /*api_version=*/CustomCallApiVersion::API_VERSION_TYPED_FFI);
+  auto status = Execute(&b, {}).status();
+  EXPECT_EQ(status.code(), absl::StatusCode::kInternal);
+  EXPECT_THAT(status.message(), ::testing::HasSubstr("User-defined message"));
+}
+
+//===----------------------------------------------------------------------===//
+// XLA:FFI handler with attached HloComputation
+//===----------------------------------------------------------------------===//
+
+static absl::Status MemcpyWithCalledComputation(
+    const ServiceExecutableRunOptions* run_options, ffi::Buffer src,
+    ffi::Buffer dst, const HloComputation* called_computation) {
+  if (called_computation == nullptr)
+    return absl::InternalError("Called computation is not defined");
+
+  if (called_computation->instruction_count() != 1)
+    return absl::InternalError("Unexpected number of instructions");
+
+  if (!DynCast<HloParameterInstruction>(called_computation->root_instruction()))
+    return absl::InternalError("ROOT must be a paremeter");
+
+  return MemcpyImpl(run_options, src, dst);
+}
+
+XLA_FFI_DEFINE_HANDLER(kMemcpyWithCalledComputation,
+                       MemcpyWithCalledComputation,
+                       ffi::Ffi::Bind()
+                           .Ctx<ServiceExecutableRunOptions>()
+                           .Arg<ffi::Buffer>()  // src
+                           .Arg<ffi::Buffer>()  // dst
+                           .Ctx<ffi::CalledComputation>());
+
+XLA_FFI_REGISTER_HANDLER(ffi::GetXlaFfiApi(),
+                         "__gpu$xla.gpu.ext.memcpy_with_called_compuation",
+                         PLATFORM, kMemcpyWithCalledComputation);
+
+TEST_F(CustomCallTest, WithCalledComputation) {
+  // FFI handlers with called computations supported only with Thunks runtime.
+  mutable_debug_options()->set_xla_gpu_enable_xla_runtime_executable(false);
+
+  auto shape = ShapeUtil::MakeShape(F32, {128});
+
+  // Build a called computation which is just a copy instruction.
+  XlaBuilder copy("copy");
+  auto p0 = Parameter(&copy, 0, shape, "l_val");
+  Copy(p0);
+  auto copy_computation = copy.Build().value();
+
+  XlaBuilder b(TestName());
+  CustomCallWithComputation(
+      &b, "__gpu$xla.gpu.ext.memcpy_with_called_compuation",
+      /*operands=*/{Broadcast(ConstantR0WithType(&b, F32, 42.0), {128})},
+      copy_computation, shape, /*opaque=*/"",
+      /*has_side_effect=*/false,
+      /*output_operand_aliasing=*/{}, /*literal=*/nullptr,
+      /*schedule=*/CustomCallSchedule::SCHEDULE_NONE,
+      /*api_version=*/CustomCallApiVersion::API_VERSION_TYPED_FFI);
   TF_ASSERT_OK_AND_ASSIGN(auto result, ExecuteAndTransfer(&b, {}));
   EXPECT_THAT(result.data<float>(), ::testing::Each(42));
 }

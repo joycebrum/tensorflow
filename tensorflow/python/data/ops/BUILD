@@ -115,6 +115,7 @@ py_strict_library(
         "//tensorflow/python/framework:composite_tensor",
         "//tensorflow/python/framework:constant_op",
         "//tensorflow/python/framework:dtypes",
+        "//tensorflow/python/framework:errors",
         "//tensorflow/python/framework:function",
         "//tensorflow/python/framework:none_tensor",
         "//tensorflow/python/framework:ops",
@@ -155,6 +156,7 @@ py_strict_library(
         "//tensorflow/python/util:nest",
         "//tensorflow/python/util:tf_export",
         "//third_party/py/numpy",
+        "@absl_py//absl/logging",
     ],
 )
 
@@ -193,7 +195,6 @@ py_strict_library(
         "//tensorflow/python/saved_model:nested_structure_coder",
         "//tensorflow/python/trackable:base",
         "//tensorflow/python/training:saver",
-        "//tensorflow/python/util:_pywrap_utils",
         "//tensorflow/python/util:compat",
         "//tensorflow/python/util:deprecation",
         "//tensorflow/python/util:nest",

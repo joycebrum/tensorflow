@@ -265,6 +265,7 @@ const StatTypeMap& GetStatTypeMap() {
       {"tf_function_call", kTfFunctionCall},
       {"tracing_count", kTfFunctionTracingCount},
       {"flops", kFlops},
+      {"model_flops", kModelFlops},
       {"bytes_accessed", kBytesAccessed},
       {"memory_access_breakdown", kMemoryAccessBreakdown},
       {"source", kSourceInfo},
@@ -497,6 +498,8 @@ const absl::string_view kMegaScaleDcnReceive =
 const absl::string_view kMegaScaleDcnSend =
     "MegaScale: Communication Transport Send";
 const absl::string_view kMegaScaleDcnSendFinished = "MegaScale: Send Finished";
+const absl::string_view kMegaScaleDcnMemAllocate = "MegaScale: Memory Allocate";
+const absl::string_view kMegaScaleDcnMemCopy = "MegaScale: Memory Copy";
 const absl::string_view kMegaScaleTopologyDiscovery =
     "MegaScale: Communication Topology Discovery.";
 const absl::string_view kMegaScaleBarrier = "MegaScale: Barrier.";
@@ -509,6 +512,9 @@ const absl::string_view kMegaScaleH2DTransferStart =
     "MegaScale: Host to Device Action";
 const absl::string_view kMegaScaleH2DTransferFinished =
     "MegaScale: Host to Device Transfer Finished";
+const absl::string_view kMegaScaleReductionStart = "MegaScale: Reduction";
+const absl::string_view kMegaScaleReductionFinished =
+    "MegaScale: Reduction Finished";
 const char kXProfMetadataKey[] = "key";
 const char kXProfMetadataFlow[] = "flow";
 const char kXProfMetadataTransfers[] = "transfers";

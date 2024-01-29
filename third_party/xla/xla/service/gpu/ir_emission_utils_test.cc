@@ -1,4 +1,4 @@
-/* Copyright 2020 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2020 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -184,7 +184,120 @@ ENTRY entry {
   // emitter is fast for S8 output.
   EXPECT_FALSE(
       GetDescriptionForTiledTransposeEmitter(*r, *r->operand(0)).has_value());
-  EXPECT_EQ(&FindNonTrivialHero(*r), r->operand(0));
+  EXPECT_EQ(FindNonTrivialHero(*r).name(), "t");
+}
+
+TEST_F(IrEmissionUtilsTest, FindReduceHeroEpilogueFusion) {
+  const char* hlo = R"(
+    HloModule module
+
+    %add {
+      %x = f32[] parameter(0)
+      %y = f32[] parameter(1)
+      ROOT %add = f32[] add(%x, %y)
+    }
+
+    %fused_computation (param_0.4: f32[128,64], param_1.4: bf16[]) -> bf16[64] {
+      %param_0 = f32[128,64]{1,0} parameter(0)
+      %param_1 = bf16[] parameter(1)
+      %convert.0 = f32[] convert(bf16[] %param_1)
+      %reduce.0 = f32[64]{0} reduce(f32[128,64]{1,0} %param_0, f32[] %convert.0), dimensions={0}, to_apply=%add
+      ROOT %convert.1 = bf16[64]{0} convert(f32[64]{0} %reduce.0)
+    }
+
+    ENTRY %main {
+      %param_0 = f32[128,64]{1,0} parameter(0)
+      %param_1 = bf16[] parameter(1)
+      ROOT fusion = bf16[64]{0} fusion(%param_0, %param_1), kind=kInput, calls=fused_computation
+    }
+    )";
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                          ParseAndReturnVerifiedModule(hlo));
+
+  HloInstruction* r = module->entry_computation()->root_instruction();
+  auto fusion = HloFusionAdaptor::ForInstruction(r);
+  const auto& result =
+      FindNonTrivialHero(fusion->GetRoots()[0].instruction(), *fusion);
+  EXPECT_EQ(result.name(), "reduce.0");
+}
+
+TEST_F(IrEmissionUtilsTest, FindReduceHeroEpilogueFusionTwoRootUsers) {
+  const char* hlo = R"(
+    HloModule module
+
+    Add {
+      %x = f32[] parameter(0)
+      %y = f32[] parameter(1)
+      ROOT %add = f32[] add(%x, %y)
+    }
+    fused_computation {
+      param_0 = f32[4,2]{1,0} parameter(0)
+      neg = f32[4,2]{1,0} negate(param_0)
+      constant_0 = f32[] constant(0)
+      reduce.1 = f32[4]{0} reduce(param_0, constant_0), dimensions={1}, to_apply=Add
+      bitcast.1 = f32[1,1,4]{2,1,0} bitcast(reduce.1)
+      sign.1 = f32[1,1,4]{2,1,0} sign(bitcast.1)
+      ROOT tuple.12 = (f32[4,2]{1,0}, f32[1,1,4]{2,1,0}, f32[1,1,4]{2,1,0}) tuple(neg, bitcast.1, sign.1)
+    }
+
+    ENTRY main.7749 {
+      Arg_2.1 = f32[4,2]{1,0} parameter(0)
+      ROOT fusion = (f32[4,2]{1,0}, f32[1,1,4]{2,1,0}, f32[1,1,4]{2,1,0}) fusion(Arg_2.1), kind=kInput, calls=fused_computation
+    }
+    )";
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                          ParseAndReturnVerifiedModule(hlo));
+
+  HloInstruction* r = module->entry_computation()->root_instruction();
+  auto fusion = HloFusionAdaptor::ForInstruction(r);
+  const auto& result =
+      FindNonTrivialHero(fusion->GetRoots()[1].instruction(), *fusion);
+  EXPECT_EQ(result.name(), "reduce.1");
+  const auto& result2 =
+      FindNonTrivialHero(fusion->GetRoots()[2].instruction(), *fusion);
+  EXPECT_EQ(result2.name(), "reduce.1");
+}
+
+TEST_F(IrEmissionUtilsTest, FindReduceHeroEpilogueFusionHeroAlsoUsedAsNonHero) {
+  const char* hlo = R"(
+    HloModule module
+
+    Add {
+      x = f32[] parameter(0)
+      y = f32[] parameter(1)
+      ROOT add = f32[] add(x, y)
+    }
+
+    fused_computation {
+      p0 = f32[4]{0} parameter(0)
+      zero = f32[] constant(0.0)
+      reduce.0 = f32[] reduce(f32[4]{0} p0, f32[] zero), dimensions={0}, to_apply=Add
+      broadcast = f32[4]{0} broadcast(f32[] reduce.0), dimensions={}
+      reduce.1 = f32[] reduce(f32[4]{0} broadcast, f32[] zero), dimensions={0}, to_apply=Add
+      bitcast = f32[1]{0} bitcast(f32[] reduce.0)
+      ROOT tuple.1 = (f32[], f32[4]{0}, f32[1]{0}) tuple(f32[] reduce.1, f32[4]{0} broadcast, f32[1]{0} bitcast)
+    }
+
+    ENTRY main {
+      Arg0 = f32[4]{0} parameter(0)
+      ROOT fusion = (f32[], f32[4]{0}, f32[1]{0}) fusion(Arg0), kind=kInput, calls=fused_computation
+    })";
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                          ParseAndReturnVerifiedModule(hlo));
+
+  HloInstruction* r = module->entry_computation()->root_instruction();
+  auto fusion = HloFusionAdaptor::ForInstruction(r);
+  const auto& result =
+      FindNonTrivialHero(fusion->GetRoots()[1].instruction(), *fusion);
+  // reduce.0 is also an operand of broadcast, but it is not a hero for that
+  // root.
+  EXPECT_EQ(result.name(), "broadcast");
+  const auto& result2 =
+      FindNonTrivialHero(fusion->GetRoots()[2].instruction(), *fusion);
+  EXPECT_EQ(result2.name(), "reduce.0");
 }
 
 TEST_F(IrEmissionUtilsTest, FindAnyTiledTransposeWithIntermediateBinaryOp) {
@@ -280,46 +393,13 @@ ENTRY entry {
 
   HloInstruction* r = module->GetComputationWithName("f")->root_instruction();
   HloInstruction* transpose =
-      module->entry_computation()->parameter_instruction(0)->users().front();
+      module->entry_computation()->GetInstructionWithName("t");
+  HloInstruction* fusion =
+      module->entry_computation()->GetInstructionWithName("fusion");
   EXPECT_EQ(
-      &FindNonTrivialHero(
-          *r,
-          [](const HloInstruction& producer, const HloInstruction& consumer) {
-            return consumer.opcode() == HloOpcode::kTranspose;
-          }),
-      transpose);
-}
-
-TEST_F(IrEmissionUtilsTest, FindNonTrivialHeroThroughFusion) {
-  const char* hlo = R"(
-HloModule module
-
-f {
-  p0 = f32[100,200,300]{2,1,0} parameter(0)
-  ROOT add = f32[100,200,300]{2,1,0} add(p0, p0)
-}
-
-ENTRY entry {
-  p0 = f32[300,200,100]{2,1,0} parameter(0)
-  p1 = f32[100,200,300]{2,1,0} parameter(1)
-  t = f32[100,200,300]{2,1,0} transpose(p0), dimensions={2,1,0}
-  fusion = f32[100,200,300]{2,1,0} fusion(t), kind=kLoop, calls=f
-  ROOT add = f32[100,200,300]{2,1,0} add(p1, fusion)
-}
-)";
-
-  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
-                          ParseAndReturnVerifiedModule(hlo));
-
-  HloInstruction* r = module->entry_computation()->root_instruction();
-  HloInstruction* transpose =
-      module->entry_computation()->parameter_instruction(0)->users().front();
-  EXPECT_EQ(
-      &FindNonTrivialHero(
-          *r,
-          [](const HloInstruction& producer, const HloInstruction& consumer) {
-            return consumer.opcode() == HloOpcode::kTranspose;
-          }),
+      &FindNonTrivialHero(*r, ProducerConsumerFusion(
+                                  HloFusionAdaptor::ForInstruction(transpose),
+                                  HloFusionAdaptor::ForInstruction(fusion))),
       transpose);
 }
 
@@ -349,26 +429,25 @@ ENTRY entry {
                                   ->parameter_instruction(0)
                                   ->users()
                                   .front();
+  HloInstruction* fusion =
+      module->entry_computation()->GetInstructionWithName("fusion");
   EXPECT_EQ(
       &FindNonTrivialHero(
-          *r,
-          [](const HloInstruction& producer, const HloInstruction& consumer) {
-            return consumer.opcode() == HloOpcode::kParameter;
-          }),
+          *r, ProducerConsumerFusion(HloFusionAdaptor::ForInstruction(fusion),
+                                     HloFusionAdaptor::ForInstruction(r))),
       transpose);
 }
 
-TEST_F(IrEmissionUtilsTest, FindNonTrivialHeroSomeOperandsInFusion) {
+TEST_F(IrEmissionUtilsTest, TransposeReachableViaTrivialAndNontrivialOps) {
   const char* hlo = R"(
 HloModule module
 
 ENTRY entry {
-  p0 = f32[300,200,100]{2,1,0} parameter(0)
-  p1 = f32[100,200,300]{2,1,0} parameter(1)
-
-  transpose = f32[100,200,300]{2,1,0} transpose(p0), dimensions={2,1,0}
-  subtract = f32[100,200,300]{2,1,0} subtract(transpose, p1)
-  ROOT add = f32[100,200,300]{2,1,0} add(subtract, p1)
+  p = f64[16,16]{1,0} parameter(0)
+  trans = f64[16,16]{1,0} transpose(p), dimensions={1,0}
+  rev = f64[16,16]{1,0} reverse(trans), dimensions={0,1}
+  sub = f64[16,16]{1,0} subtract(trans, trans)
+  ROOT add = f64[16,16]{1,0} add(rev, sub)
 }
 )";
 
@@ -376,21 +455,10 @@ ENTRY entry {
                           ParseAndReturnVerifiedModule(hlo));
 
   HloInstruction* r = module->entry_computation()->root_instruction();
-  HloInstruction* transpose =
-      module->entry_computation()->parameter_instruction(0)->users().front();
-  // The transpose is the hero if everything is on one fusion.
-  EXPECT_EQ(&FindNonTrivialHero(
-                *r, [](const HloInstruction& producer,
-                       const HloInstruction& consumer) { return false; }),
-            transpose);
-  // The transpose isn't the hero if we cut the fusion at the subtraction.
-  EXPECT_EQ(
-      &FindNonTrivialHero(
-          *r,
-          [](const HloInstruction& producer, const HloInstruction& consumer) {
-            return producer.opcode() == HloOpcode::kSubtract;
-          }),
-      r);
+  EXPECT_FALSE(
+      GetDescriptionForTiledTransposeEmitter(*r, FindNonTrivialHero(*r))
+          .has_value());
+  EXPECT_EQ(&FindNonTrivialHero(*r), r);
 }
 
 TEST_F(IrEmissionUtilsTest, FindTiledTransposeOneSwapDimIsSmall) {
@@ -475,6 +543,71 @@ ENTRY entry {
   EXPECT_EQ(result->instr, tr);
   EXPECT_EQ(result->dimensions, Vector3({1100, 12, 8}));
   EXPECT_EQ(result->permutation, Vector3({2, 1, 0}));
+}
+
+TEST_F(IrEmissionUtilsTest, IsContiguousSlice) {
+  const char* hlo = R"(
+HloModule module
+
+ENTRY entry {
+  p = f32[8,12,100,11]{3,2,1,0} parameter(0)
+  slice.1 = f32[2,12,100,11]{3,2,1,0} slice(p), slice={[1:3], [0:12], [0:100], [0:11]}
+  slice.2 = f32[1,1,1,11]{3,2,1,0} slice(p), slice={[1:2], [0:1], [0:1], [0:11]}
+  slice.3 = f32[1,1,10,11]{3,2,1,0} slice(p), slice={[1:2], [0:1], [0:10], [0:11]}
+  slice.4 = f32[1,2,10,11]{3,2,1,0} slice(p), slice={[1:2], [0:2], [0:10], [0:11]}
+  slice.5 = f32[8,2,100,11]{3,2,1,0} slice(p), slice={[0:8], [10:12], [0:100], [0:11]}
+  c = f32[8,12,100,11]{0,1,3,2} copy(p)
+  slice.6 = f32[8,12,40,11]{0,1,3,2} slice(c), slice={[0:8], [0:12], [10:50], [0:11]}
+  slice.7 = f32[8,12,1,2]{0,1,3,2} slice(c), slice={[0:8], [0:12], [0:1], [0:2]}
+  slice.8 = f32[8,2,100,11]{0,1,3,2} slice(c), slice={[0:8], [0:2], [0:100], [0:11]}
+  slice.9 = f32[8,2,40,11]{0,1,3,2} slice(c), slice={[0:8], [10:12], [10:50], [0:11]}
+  slice.10 = f32[8,2,50,11]{3,2,1,0} slice(p), slice={[0:8:1], [10:12:1], [0:100:2], [0:11:1]}
+  ROOT t = (f32[2,12,100,11]{3,2,1,0},
+            f32[1,1,1,11]{3,2,1,0},
+            f32[1,1,10,11]{3,2,1,0},
+            f32[1,2,10,11]{3,2,1,0},
+            f32[8,2,100,11]{3,2,1,0},
+            f32[8,12,40,11]{0,1,3,2},
+            f32[8,12,1,2]{0,1,3,2},
+            f32[8,2,100,11]{0,1,3,2},
+            f32[8,2,40,11]{0,1,3,2},
+            f32[8,2,50,11]{3,2,1,0}) tuple(slice.1, slice.2, slice.3, slice.4, slice.5, slice.6, slice.7, slice.8, slice.9, slice.10)
+}
+)";
+
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<HloModule> module,
+                          ParseAndReturnVerifiedModule(hlo));
+
+  HloInstruction* slice1 =
+      module->entry_computation()->GetInstructionWithName("slice.1");
+  HloInstruction* slice2 =
+      module->entry_computation()->GetInstructionWithName("slice.2");
+  HloInstruction* slice3 =
+      module->entry_computation()->GetInstructionWithName("slice.3");
+  HloInstruction* slice4 =
+      module->entry_computation()->GetInstructionWithName("slice.4");
+  HloInstruction* slice5 =
+      module->entry_computation()->GetInstructionWithName("slice.5");
+  HloInstruction* slice6 =
+      module->entry_computation()->GetInstructionWithName("slice.6");
+  HloInstruction* slice7 =
+      module->entry_computation()->GetInstructionWithName("slice.7");
+  HloInstruction* slice8 =
+      module->entry_computation()->GetInstructionWithName("slice.8");
+  HloInstruction* slice9 =
+      module->entry_computation()->GetInstructionWithName("slice.9");
+  HloInstruction* slice10 =
+      module->entry_computation()->GetInstructionWithName("slice.10");
+  EXPECT_TRUE(IsContiguousSlice(*slice1));
+  EXPECT_TRUE(IsContiguousSlice(*slice2));
+  EXPECT_TRUE(IsContiguousSlice(*slice3));
+  EXPECT_TRUE(!IsContiguousSlice(*slice4));
+  EXPECT_TRUE(!IsContiguousSlice(*slice5));
+  EXPECT_TRUE(IsContiguousSlice(*slice6));
+  EXPECT_TRUE(IsContiguousSlice(*slice7));
+  EXPECT_TRUE(!IsContiguousSlice(*slice8));
+  EXPECT_TRUE(!IsContiguousSlice(*slice9));
+  EXPECT_TRUE(!IsContiguousSlice(*slice10));
 }
 
 TEST_F(IrEmissionUtilsTest, LiteralToAttrToXlaFormat) {

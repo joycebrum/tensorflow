@@ -1,4 +1,4 @@
-/* Copyright 2023 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2023 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,8 +28,8 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_instructions.h"
 #include "xla/hlo/ir/hlo_opcode.h"
 #include "xla/layout.h"
-#include "xla/service/gpu/gemm_rewriter_triton.h"
 #include "xla/service/gpu/matmul_utils.h"
+#include "xla/service/gpu/triton_fusion_analysis.h"
 #include "xla/service/hlo_verifier.h"
 #include "xla/service/layout_assignment.h"
 #include "xla/service/pattern_matcher.h"
@@ -43,6 +43,9 @@ limitations under the License.
 #include "tsl/platform/errors.h"
 #include "tsl/platform/status_matchers.h"
 #include "tsl/platform/statusor.h"
+
+// TODO(b/317016172): Inspect usages of TritonGemmConfig and potentially update
+// them to to use newly exposed parameters.
 
 namespace xla {
 namespace gpu {

@@ -1,4 +1,4 @@
-/* Copyright 2020 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2020 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -45,9 +45,9 @@ limitations under the License.
 #include "xla/hlo/ir/hlo_sharding.h"
 #include "xla/layout.h"
 #include "xla/layout_util.h"
-#include "xla/python/exceptions.h"
+#include "xla/pjrt/exceptions.h"
+#include "xla/pjrt/status_casters.h"
 #include "xla/python/py_client.h"
-#include "xla/python/status_casters.h"
 #include "xla/python/types.h"
 #include "xla/service/call_inliner.h"
 #include "xla/service/computation_placer.h"

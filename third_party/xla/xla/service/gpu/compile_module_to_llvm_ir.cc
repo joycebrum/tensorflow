@@ -1,4 +1,4 @@
-/* Copyright 2023 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2023 The OpenXLA Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,20 +29,31 @@ limitations under the License.
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
+#include "mlir/IR/Attributes.h"  // from @llvm-project
+#include "mlir/IR/Builders.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
+#include "mlir/IR/BuiltinTypeInterfaces.h"  // from @llvm-project
 #include "mlir/IR/Diagnostics.h"  // from @llvm-project
+#include "mlir/IR/DialectRegistry.h"  // from @llvm-project
+#include "mlir/IR/OwningOpRef.h"  // from @llvm-project
+#include "mlir/IR/Value.h"  // from @llvm-project
+#include "mlir/Interfaces/FunctionInterfaces.h"  // from @llvm-project
 #include "mlir/Pass/PassManager.h"  // from @llvm-project
+#include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "xla/hlo/ir/hlo_instruction.h"
 #include "xla/hlo/ir/hlo_module.h"
@@ -52,21 +63,26 @@ limitations under the License.
 #include "xla/service/buffer_assignment.h"
 #include "xla/service/buffer_value.h"
 #include "xla/service/dump.h"
-#include "xla/service/gpu/buffer_sharing.h"
-#include "xla/service/gpu/conditional_thunk.h"
-#include "xla/service/gpu/for_thunk.h"
 #include "xla/service/gpu/gpu_constants.h"
 #include "xla/service/gpu/gpu_executable.h"
+#include "xla/service/gpu/gpu_memory_space_assignment.h"
 #include "xla/service/gpu/ir_emitter_context.h"
 #include "xla/service/gpu/ir_emitter_unnested.h"
 #include "xla/service/gpu/metrics.h"
-#include "xla/service/gpu/sequential_thunk.h"
-#include "xla/service/gpu/while_thunk.h"
+#include "xla/service/gpu/runtime/executable.h"
+#include "xla/service/gpu/runtime3/conditional_thunk.h"
+#include "xla/service/gpu/runtime3/sequential_thunk.h"
+#include "xla/service/gpu/runtime3/while_thunk.h"
+#include "xla/service/gpu/thunk.h"
 #include "xla/service/hlo_dataflow_analysis.h"
+#include "xla/service/hlo_ordering.h"
 #include "xla/service/llvm_ir/llvm_util.h"
+#include "xla/service/logical_buffer.h"
 #include "xla/shape.h"
+#include "xla/shape_util.h"
 #include "xla/status.h"
 #include "xla/status_macros.h"
+#include "xla/statusor.h"
 #include "xla/stream_executor/device_description.h"
 #include "xla/stream_executor/rocm/rocm_platform_id.h"
 #include "xla/stream_executor/stream_executor.h"
@@ -78,6 +94,7 @@ limitations under the License.
 #include "tsl/platform/casts.h"
 #include "tsl/platform/env.h"
 #include "tsl/platform/errors.h"
+#include "tsl/platform/logging.h"
 #include "tsl/platform/statusor.h"
 
 namespace xla {
@@ -131,12 +148,12 @@ class DumpAfterPassIfEnabled : public mlir::PassInstrumentation {
 };
 
 // Lowers MLIR module to the XLA Gpu runtime custom calls.
-static Status LowerToXlaGpuRuntime(
+static absl::Status LowerToXlaGpuRuntime(
     mlir::ModuleOp module, llvm::StringRef entry_function_name,
     llvm::ArrayRef<int64_t> buffer_sizes, ThunkSequence* thunk_sequence,
     const HloModule* hlo_module, se::GpuComputeCapability compute_capability) {
   if (!module) {
-    return InternalError("No MLIR module to lower.");
+    return Internal("No MLIR module to lower.");
   }
 
   const DebugOptions& debug_options = hlo_module->config().debug_options();
@@ -155,7 +172,7 @@ static Status LowerToXlaGpuRuntime(
   absl::flat_hash_set<DebugOptions::CommandBufferCmdType> command_types;
   for (int command_type_num : debug_options.xla_gpu_enable_command_buffer()) {
     if (!DebugOptions::CommandBufferCmdType_IsValid(command_type_num)) {
-      return InternalError("Invalid command buffer command type");
+      return Internal("Invalid command buffer command type");
     }
     DebugOptions::CommandBufferCmdType command_type =
         static_cast<DebugOptions::CommandBufferCmdType>(command_type_num);
@@ -171,10 +188,10 @@ static Status LowerToXlaGpuRuntime(
   populateXlaGpuRuntimePasses(pm, thunk_sequence, opts);
 
   if (pm.run(module).failed()) {
-    return InternalError("Failed to lower LMHLO to Gpu runtime custom calls.");
+    return Internal("Failed to lower LMHLO to Gpu runtime custom calls.");
   }
 
-  return OkStatus();
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -188,9 +205,6 @@ void ForAllThunks(const std::function<void(Thunk*)>& fn,
            cond_thunk->branch_thunks()) {
         ForAllThunks(fn, &branch_thunks->thunks());
       }
-    } else if (thunk->kind() == Thunk::kFor) {
-      auto* for_thunk = tensorflow::down_cast<ForThunk*>(thunk.get());
-      ForAllThunks(fn, &for_thunk->body_thunk_sequence()->thunks());
     } else if (thunk->kind() == Thunk::kSequential) {
       auto* sequential_thunk =
           tensorflow::down_cast<SequentialThunk*>(thunk.get());
@@ -214,7 +228,7 @@ static void ForwardCollectiveAttrs(mlir::ModuleOp module,
   func->setAttr("num_partitions", b.getI64IntegerAttr(config.num_partitions()));
 }
 
-StatusOr<GpuExecutable::OwnedGpuRuntimeProgram> LowerToJitRt(
+absl::StatusOr<GpuExecutable::OwnedGpuRuntimeProgram> LowerToJitRt(
     mlir::ModuleOp mlir_module, llvm::StringRef entry_function_name,
     llvm::ArrayRef<int64_t> buffer_sizes,
     std::unique_ptr<ThunkSequence> thunk_sequence, const HloModule* hlo_module,
@@ -249,7 +263,7 @@ StatusOr<GpuExecutable::OwnedGpuRuntimeProgram> LowerToJitRt(
 //
 // This function also serves as a half-baked verifier for function arg
 // attributes, since a full verifier doesn't exist yet.
-static Status GetMlirAllocationInfo(
+static absl::Status GetMlirAllocationInfo(
     mlir::func::FuncOp func, std::vector<BufferAllocation>* allocations,
     absl::flat_hash_map<ShapeIndex, GpuExecutable::OutputInfo>* output_info,
     Shape* output_shape) {
@@ -286,7 +300,7 @@ static Status GetMlirAllocationInfo(
 
 // The order of `thunk_sequence` corresponds to
 // `hlo_schedule->ThunkLaunchOrder()`.
-StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
+absl::StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
     HloModule* hlo_module, llvm::LLVMContext* llvm_context,
     const std::string& target_triple, const std::string& data_layout,
     const std::string& platform_name, se::Platform::Id platform_id,
@@ -307,7 +321,12 @@ StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
           /*color_alignment=*/
           [](LogicalBuffer::Color) { return kXlaAllocatedBufferAlignBytes; },
           /*allocate_buffers_for_constants=*/true,
-          /*colorer=*/BufferAssigner::DefaultColorer(),
+          /*colorer=*/
+          hlo_module->config()
+                  .debug_options()
+                  .xla_gpu_enable_nccl_user_buffers()
+              ? CollectiveColorer()
+              : BufferAssigner::DefaultColorer(),
           /*must_not_live_out=*/{}, can_share_buffer_function));
 
   VLOG(1) << "Buffer Assignment Stats for " << hlo_module->name() << "\n"
@@ -373,7 +392,7 @@ StatusOr<CompileModuleResults> CompileModuleToLlvmIr(
   IrEmitterContext ir_emitter_context(
       hlo_module, results.buffer_assignment.get(), platform_name,
       gpu_device_info, mlir_context.get(), results.llvm_module.get(),
-      emit_from_hlo);
+      emit_from_hlo, /*emit_kernels=*/true);
 
   std::vector<BufferAllocation*> allocations;
   if (emit_from_hlo) {
